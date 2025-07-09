@@ -1,0 +1,10 @@
+[Unit]
+Description=Ejecutar telemetría MORE cada 10 segundos
+
+[Timer]
+OnBootSec=10sec
+OnUnitActiveSec=10sec
+Unit=more.service
+
+[Install]
+WantedBy=timers.target

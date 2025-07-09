@@ -1,0 +1,6 @@
+[Unit]
+Description=MORE - Monitoreo del sistema
+
+[Service]
+Type=oneshot
+ExecStart=/opt/more/datos.sh
