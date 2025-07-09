@@ -26,6 +26,7 @@ Genera un archivo JSON que será visualizado por el panel web.
 
 ### 1. Actualizar paquetes, instalar herramientas necesarias (con usuario root)
 apt update && apt install git -y
+
 apt install apache2 php bc coreutils procps -y
 
 ### 2. Clonar el repositorio, ingresar a ese directorio y crear la ruta del directorio
@@ -33,6 +34,7 @@ apt install apache2 php bc coreutils procps -y
 git clone https://github.com/Chelo2025/Proyecto-MORE
 
 cd Proyecto-MORE
+
 mkdir -p /opt/more/
 
 ### 3. Asignar permisos de ejecución
@@ -44,10 +46,12 @@ chmod +x datos.sh
 cp datos.sh /opt/more/
 
 cp index.php /var/www/html/
+
 cp more.service /etc/systemd/system/
+
 cp more.timer /etc/systemd/system/
 
-### 5. Configuración del administrador systemd (seguimos un usuario root)
+### 5. Configuración del administrador systemd (seguimos con usuario root)
 
 systemctl daemon-reexec
 
