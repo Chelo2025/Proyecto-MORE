@@ -1,0 +1,180 @@
+Proteger el archivo index.php de ataques modernos como fuerza bruta, xss, sql injection, y exposición de errores,
+aplicando medidas seguras.
+
+Fue implementado en un entorno seguro con DEBIAN 12 SIN ENTORNO GRÁFICO, para un archivo index.php que
+muestra información sensible del sistema.
+
+1) Instalar Apache y PHP
+apt update
+apt install apache2 php libapache2-mod-php apache2-utils
+
+2) Desactivar errores visibles de PHP (8.2 puede variar, depende de la versión instalada)
+nano /etc/php/8.2/apache2/php.ini
+Cambiar las siguientes líneas: 
+display_errors = Off
+expose_php = Off
+log_errors = On
+error_log = /var/log/php_errors.log
+
+Comando para reiniciar Apache
+systemctl restart apache2
+
+3) Proteger index.php con autenticación básica
+a) Crear archivo .htpasswd con el usuario more-admin (puedes usar cualquier nombre de usuario válido y sin espacios)
+htpasswd -c /etc/apache2/.htpasswd more-admin
+
+
+b) Configurar acceso en Apache
+Editar el archivo 000-default.conf
+nano /etc/apache2/sites-available/000-default.conf
+Luego agregar dentro de <Directory /var/www/html>
+
+<Directory /var/www/html>
+    AuthType Basic
+    AuthName "Zona segura"
+    AuthUserFile /etc/apache2/.htpasswd
+    Require valid-user
+</Directory>
+
+Aplicar los cambios
+a2enconf security
+systemctl restart apache2
+
+4) Validar entradas en index.php con el código completo
+
+<?php
+// Leer y decodificar el archivo JSON de monitoreo
+$json_path = '/opt/more/datos.json';
+$data = [];
+
+if (file_exists($json_path)) {
+    $json_content = file_get_contents($json_path);
+    $data = json_decode($json_content, true);
+
+    // Validar que se decodificó correctamente
+    if (!is_array($data)) {
+        $data = ['error' => 'Archivo JSON malformado o vacío'];
+    }
+} else {
+    $data = ['error' => 'Archivo de datos no encontrado'];
+}
+
+// Función de escape para prevenir XSS
+function e($value) {
+    return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
+}
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Monitoreo del sistema</title>
+    <meta http-equiv="refresh" content="10">
+    <style>
+        body { background: #111; color: #0f0; font-family: monospace; padding: 2em; }
+        table td { padding: 6px 12px; }
+        h2 { color: #6ef; }
+        .critico { color: #f55; font-weight: bold; }
+        .alto { color: #ff5; }
+        .moderado { color: #5f5; }
+    </style>
+</head>
+<body>
+<?php if (isset($data['error'])): ?>
+    <h2 style="color: #f55;">Error: <?= e($data['error']) ?></h2>
+<?php else: ?>
+    <h2>INFORMACIÓN - <?= e($data['fecha']) ?></h2>
+    <p style="color:#ccc;">
+        <strong>HOST:</strong> <?= e($data['hostname']) ?><br>
+        <strong>SISTEMA OPERATIVO:</strong> <?= e($data['os']) ?><br>
+        <strong>KERNEL:</strong> <?= e($data['kernel']) ?> | <?= e($data['arquitectura']) ?>
+    </p>
+    <table>
+        <tr><td>CPU</td><td><?= e($data['cpu']) ?>%</td></tr>
+        <tr><td>RAM</td><td><?= e($data['ram_usada']) ?>/<?= e($data['ram_total']) ?> MB (<?= e($data['ram_porcentaje']) ?>%)</td></tr>
+        <tr><td>DISCO</td><td><?= e($data['disco']) ?></td></tr>
+        <tr><td>TIEMPO DE ACTIVIDAD</td><td><?= e($data['uptime']) ?></td></tr>
+        <tr><td>USUARIOS ACTIVOS</td><td><?= e($data['usuarios']) ?></td></tr>
+        <tr><td>CARGA PROMEDIO</td>
+            <td><?= e($data['carga_1m']) ?>, <?= e($data['carga_5m']) ?>, <?= e($data['carga_15m']) ?> (1m/5m/15m)</td>
+        </tr>
+        <tr><td>ESTADO</td>
+            <td class="<?= strtolower(e($data['estado'])) ?>"><?= e($data['estado']) ?></td>
+        </tr>
+    </table>
+
+    <h3>TOP 5 PROCESOS POR USO DE CPU</h3>
+    <table border="1" cellpadding="6">
+        <tr><th>PID</th><th>Comando</th><th>%CPU</th><th>%MEM</th></tr>
+        <?php if (!empty($data['procesos']) && is_array($data['procesos'])): ?>
+            <?php foreach ($data['procesos'] as $p): ?>
+                <tr>
+                    <td><?= e($p['pid']) ?></td>
+                    <td><?= e($p['cmd']) ?></td>
+                    <td><?= e($p['cpu']) ?></td>
+                    <td><?= e($p['mem']) ?></td>
+                </tr>
+            <?php endforeach; ?>
+        <?php else: ?>
+            <tr><td colspan="4">Sin información de procesos</td></tr>
+        <?php endif; ?>
+    </table>
+<?php endif; ?>
+</body>
+</html>
+
+
+5) Prevenir ataques por fuerza bruta
+Instalar Fail2Ban
+apt install fail2ban
+Crear regla
+nano /etc/fail2ban/jail.local
+
+Para Apache Auth:
+
+[apache-auth]
+enabled = true
+port    = http,https
+logpath = /var/log/apache2/error.log
+maxretry = 5
+bantime = 600
+
+
+Reiniciar servicio fail2ban:
+systemctl restart fail2ban
+
+6) Permisos adecuados
+chown -R www-data:www-data /var/www/html
+chmod -R 750 /var/www/html
+
+7) Configurar headers HTTP de seguridad
+Editar config de Apache
+nano /etc/apache2/conf-available/security.conf
+
+Agregar al final de la línea:
+
+Header always set X-Frame-Options "DENY"
+Header always set X-XSS-Protection "1; mode=block"
+Header always set X-Content-Type-Options "nosniff"
+
+Habilitar módulo y reiniciar
+a2enmod headers
+systemctl restart apache2
+
+8) Revisar logs de Apache y PHP
+tail -f /var/log/apache2/access.log
+tail -f /var/log/php_errors.log
+
+9) Herramientas adicionales
+Intalar ModSecurity
+apt install libapache2-mod-security2
+systemctl restart apache2
+
+Usar HTTPS con Let's Encrypt
+apt install certbot python3-certbot-apache
+certbot --apache
+
+
+
+
+
